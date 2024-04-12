@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
+
+
+<link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+<link rel="stylesheet" href="https://www.w3schools.com/lib/w3-theme-black.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <style>
         .grid-container {
             display: grid;
@@ -18,10 +24,32 @@
             max-width: 100%;
             height: auto;
         }
+		.w3-sidebar {
+			  z-index: 3;
+			  width: 250px;
+			  top: 43px;
+			  bottom: 0;
+			  height: inherit;
+			}
     </style>
 </head>
 <body>
 
+<!-- Navbar -->
+<div class="w3-top">
+  <div class="w3-bar w3-theme w3-top w3-left-align w3-large">
+    <a class="w3-bar-item w3-button w3-right w3-hide-large w3-hover-white w3-large w3-theme-l1" href="javascript:void(0)" onclick="w3_open()"><i class="fa fa-bars"></i></a>
+    <a href="index.html" class="w3-bar-item w3-button w3-theme-l1">Home</a>
+    <a href="about.html" class="w3-bar-item w3-button w3-hide-small w3-hover-white">About</a>
+    <!-- <a href="#" class="w3-bar-item w3-button w3-hide-small w3-hover-white">News</a> -->
+    <!-- <a href="#" class="w3-bar-item w3-button w3-hide-small w3-hover-white">Contact</a> -->
+    <!-- <a href="#" class="w3-bar-item w3-button w3-hide-small w3-hide-medium w3-hover-white">Clients</a> -->
+    <!-- <a href="#" class="w3-bar-item w3-button w3-hide-small w3-hide-medium w3-hover-white">Partners</a> -->
+  </div>
+</div>
+
+
+<div class="w3-row w3-padding-64">
 <h1>NZ Mortgage Interest Rate Charts</h1>
 <p>
 Charts below are daily snapshots of the walk-in interest rate for each of the main banks (92% of mortgage market) in New Zealand over the last 2 years.
