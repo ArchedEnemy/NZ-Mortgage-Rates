@@ -135,6 +135,19 @@ df_all['date'] = pd.to_datetime(df_all['date']).dt.date
 df_all.to_csv(r'C:\Users\User\Documents\NZ Mortgage Normalised.csv', index = False)
 
 
+#get the last change date
+latest_rates = df_all[(df_all.LatestDateFlag == 'Yes')]
+previous_rates = pd.merge(df_all, latest_rates, how="left", on=['Institution','InterestRateType','ProductType','InterestRate'], indicator=True)
+previous_rates = previous_rates[previous_rates['_merge'] == 'left_only'] 
+previous_rates.rename(columns={'date_x': 'LastChangeDate'}, inplace=True)   
+previous_rates = previous_rates.groupby(['Institution', 'ProductType', 'InterestRateType'])['LastChangeDate'].max().reset_index()
+
+# Add one day to the last change date
+previous_rates['LastChangeDate'] = pd.to_datetime(previous_rates['LastChangeDate']) + pd.DateOffset(days=1)
+
+# Calculate the number of days passed between today and the last rate change date
+previous_rates['DaysSinceLastChange'] = (pd.to_datetime(today, format="%d/%m/%Y") - pd.to_datetime(previous_rates['LastChangeDate'])).dt.days
+
 
 df_mjr6 = df_all[(df_all.ProductType.isin(['Standard','LVR < 80%'])) & (df_all.Institution.isin(['ANZ','ASB','BNZ','Westpac','Kiwibank']))] [['Institution','InterestRateType','InterestRate','date','ProductType']]
 df_mjr6['Institution'] = df_mjr6['Institution'] + np.where(df_mjr6['ProductType']=='LVR < 80%', '*','')
@@ -212,6 +225,7 @@ for product in products:
     # Save the plot as a PNG file in the same directory as the CSV file
     plt.savefig(os.path.join(directory, f'{product}_interest_rates.png'))
 
+
 df_latest = df_all[(df_all.ProductType.isin(['Standard'])) & (df_all.LatestDateFlag == 'Yes') & (df_all.Institution.isin(['ANZ','ASB','BNZ','Westpac','Kiwibank']))][['Institution','InterestRateType','InterestRate','date','ProductType']]
 pivot_data = df_latest.pivot(index='Institution', columns='InterestRateType', values='InterestRate')
 
@@ -227,6 +241,23 @@ pivot_data = pivot_data.reindex(new_order, axis=1)
 
 # Sort the DataFrame by the index (Bank)
 pivot_data.sort_index(inplace=True ,ascending=False)
+
+df_latest_change = previous_rates[(previous_rates.ProductType.isin(['Standard'])) & (previous_rates.Institution.isin(['ANZ','ASB','BNZ','Westpac','Kiwibank']))][['Institution','InterestRateType','LastChangeDate','DaysSinceLastChange']]
+pivot_data_change = df_latest_change.pivot(index='Institution', columns='InterestRateType', values='DaysSinceLastChange')
+
+# Add a new row to the DataFrame
+pivot_data_change.loc['ASB'] = np.nan
+pivot_data_change.loc['BNZ'] = np.nan
+
+# Define the new order of the columns
+new_order = ['6 Months', '1 Year', '18 Months', '2 Year', '3 Year', '4 Year', '5 Year', 'Floating']
+
+# Reorder the columns
+pivot_data_change = pivot_data_change.reindex(new_order, axis=1)
+
+# Sort the DataFrame by the index (Bank)
+pivot_data_change.sort_index(inplace=True ,ascending=False)
+
 
 # Create the figure and the axes
 fig, ax = plt.subplots(figsize=(10,6), dpi=300)
@@ -253,42 +284,66 @@ for i in range(nrows):
             ha = 'left'
             text_label = f'{pivot_data.index[i]}'
             color = normal_color
+            # Add bank name
+            ax.annotate(
+                xy=(positions[j], i + .5),
+                text=text_label,
+                ha=ha,
+                va='center',
+                weight=weight,
+                fontsize=8,
+                color=color
+            )
         else:
             ha = 'center'
-            text_label = f'{pivot_data[column].iloc[i]}'
+            # Add interest rate
+            rate_value = pivot_data[column].iloc[i]
+            days_value = pivot_data_change[column].iloc[i]
             
-            # Check if the current value is the lowest in the column
-            if pivot_data[column].iloc[i] == pivot_data[column].min():
-                color = lowest_color
-                weight = 'bold'
-            else:
-                color = normal_color
-            if np.isnan(pivot_data[column].iloc[i]):
-                color = 'white'    
-        ax.annotate(
-            xy=(positions[j], i + .5),
-            text=text_label,
-            ha=ha,
-            va='center',
-            weight=weight,
-            fontsize=8,
-            color=color  # Use the color
-        )
+            if not np.isnan(rate_value):
+                # Interest rate display
+                if rate_value == pivot_data[column].min():
+                    color = lowest_color
+                    weight = 'bold'
+                else:
+                    color = normal_color
+                    weight = 'normal'
+                
+                ax.annotate(
+                    xy=(positions[j], i + .6),  # Slightly higher position
+                    text=f'{rate_value}',
+                    ha=ha,
+                    va='center',
+                    weight=weight,
+                    fontsize=8,
+                    color=color
+                )
+                
+                # Days since last change display
+                ax.annotate(
+                    xy=(positions[j], i + .3),  # Slightly lower position
+                    text=f'({int(days_value)})',
+                    ha=ha,
+                    va='center',
+                    weight='normal',
+                    fontsize=7,
+                    color='gray'
+                )
 
 # Add column names
 for index, c in enumerate(columns):
-        if index == 0:
-            ha = 'left'
-        else:
-            ha = 'center'
-        ax.annotate(
-            xy=(positions[index], nrows + .25),
-            text=columns[index],
-            ha=ha,
-            va='bottom',
-            weight='bold',
-            fontsize=7
-        )
+    if index == 0:
+        ha = 'left'
+    else:
+        ha = 'center'
+    ax.annotate(
+        xy=(positions[index], nrows + .25),
+        text=columns[index],
+        ha=ha,
+        va='bottom',
+        weight='bold',
+        fontsize=7
+    )
 
 # Add dividing lines
 ax.plot([ax.get_xlim()[0], ax.get_xlim()[1]], [nrows, nrows], lw=1.5, color='black', marker='', zorder=4)
@@ -307,7 +362,6 @@ plt.savefig(
 )
 
 
-
 df_latest = df_all[(df_all.ProductType.isin(['LVR < 80%'])) & (df_all.LatestDateFlag == 'Yes') & (df_all.Institution.isin(['ANZ','ASB','BNZ','Westpac','Kiwibank']))][['Institution','InterestRateType','InterestRate','date','ProductType']]
 pivot_data = df_latest.pivot(index='Institution', columns='InterestRateType', values='InterestRate')
 
@@ -320,6 +374,18 @@ pivot_data = pivot_data.reindex(new_order, axis=1)
 # Sort the DataFrame by the index (Bank)
 pivot_data.sort_index(inplace=True ,ascending=False)
 
+df_latest_change = previous_rates[(previous_rates.ProductType.isin(['LVR < 80%'])) & (previous_rates.Institution.isin(['ANZ','ASB','BNZ','Westpac','Kiwibank']))][['Institution','InterestRateType','LastChangeDate','DaysSinceLastChange']]
+pivot_data_change = df_latest_change.pivot(index='Institution', columns='InterestRateType', values='DaysSinceLastChange')
+
+# Define the new order of the columns
+new_order = ['6 Months', '1 Year', '18 Months', '2 Year', '3 Year', '4 Year', '5 Year', 'Floating']
+
+# Reorder the columns
+pivot_data_change = pivot_data_change.reindex(new_order, axis=1)
+
+# Sort the DataFrame by the index (Bank)
+pivot_data_change.sort_index(inplace=True ,ascending=False)
+
 # Create the figure and the axes
 fig, ax = plt.subplots(figsize=(10,6), dpi=300)
 
@@ -345,42 +411,66 @@ for i in range(nrows):
             ha = 'left'
             text_label = f'{pivot_data.index[i]}'
             color = normal_color
+            # Add bank name
+            ax.annotate(
+                xy=(positions[j], i + .5),
+                text=text_label,
+                ha=ha,
+                va='center',
+                weight=weight,
+                fontsize=8,
+                color=color
+            )
         else:
             ha = 'center'
-            text_label = f'{pivot_data[column].iloc[i]}'
+            # Add interest rate
+            rate_value = pivot_data[column].iloc[i]
+            days_value = pivot_data_change[column].iloc[i]
             
-            # Check if the current value is the lowest in the column
-            if pivot_data[column].iloc[i] == pivot_data[column].min():
-                color = lowest_color
-                weight = 'bold'
-            else:
-                color = normal_color
-            if np.isnan(pivot_data[column].iloc[i]):
-                color = 'white'    
-        ax.annotate(
-            xy=(positions[j], i + .5),
-            text=text_label,
-            ha=ha,
-            va='center',
-            weight=weight,
-            fontsize=8,
-            color=color  # Use the color
-        )
+            if not np.isnan(rate_value):
+                # Interest rate display
+                if rate_value == pivot_data[column].min():
+                    color = lowest_color
+                    weight = 'bold'
+                else:
+                    color = normal_color
+                    weight = 'normal'
+                
+                ax.annotate(
+                    xy=(positions[j], i + .6),  # Slightly higher position
+                    text=f'{rate_value}',
+                    ha=ha,
+                    va='center',
+                    weight=weight,
+                    fontsize=8,
+                    color=color
+                )
+                
+                # Days since last change display
+                ax.annotate(
+                    xy=(positions[j], i + .3),  # Slightly lower position
+                    text=f'({int(days_value)})',
+                    ha=ha,
+                    va='center',
+                    weight='normal',
+                    fontsize=7,
+                    color='gray'
+                )
 
 # Add column names
 for index, c in enumerate(columns):
-        if index == 0:
-            ha = 'left'
-        else:
-            ha = 'center'
-        ax.annotate(
-            xy=(positions[index], nrows + .25),
-            text=columns[index],
-            ha=ha,
-            va='bottom',
-            weight='bold',
-            fontsize=7
-        )
+    if index == 0:
+        ha = 'left'
+    else:
+        ha = 'center'
+    ax.annotate(
+        xy=(positions[index], nrows + .25),
+        text=columns[index],
+        ha=ha,
+        va='bottom',
+        weight='bold',
+        fontsize=7
+    )
 
 # Add dividing lines
 ax.plot([ax.get_xlim()[0], ax.get_xlim()[1]], [nrows, nrows], lw=1.5, color='black', marker='', zorder=4)
@@ -389,7 +479,6 @@ for x in range(1, nrows):
     ax.plot([ax.get_xlim()[0], ax.get_xlim()[1]], [x, x], lw=1.15, color='gray', ls=':', zorder=3 , marker='')
 
 plt.title('Big 5 Banks Rate requiring LVR < 80% - ' + today) 
-
 
 ax.set_axis_off()
 plt.savefig(
@@ -400,22 +489,13 @@ plt.savefig(
 )
 
 
-from datetime import date
-#from datetime import timedelta
-#today = date.today() - timedelta(days = 1)
-today = date.today() 
-today = today.strftime("%d/%m/%Y")
 
 df_latest = df_all[(df_all.ProductType.isin(['Standard'])) & (df_all.LatestDateFlag == 'Yes') & (df_all.Institution.isin(['Kiwibank','SBS Bank','Co-operative Bank','Heartland Bank','TSB Bank']))][['Institution','InterestRateType','InterestRate','date','ProductType']]
 df_latest['Institution'] = np.where(df_latest['Institution']=='Co-operative Bank', 'Co-op Bank'
     ,np.where(df_latest['Institution']=='Heartland Bank', 'Heartland'
     ,df_latest['Institution']))
 pivot_data = df_latest.pivot(index='Institution', columns='InterestRateType', values='InterestRate')
-#pivot_data['Floating'] = pivot_data['Floating'].apply(lambda x: float("{:.2f}".format(x)))
 
-
-# Add a new row to the DataFrame
-pivot_data.loc['Heartland'] = np.nan
 
 # Define the new order of the columns
 new_order = ['6 Months', '1 Year', '18 Months', '2 Year', '3 Year', '4 Year', '5 Year', 'Floating']
@@ -425,6 +505,21 @@ pivot_data = pivot_data.reindex(new_order, axis=1)
 
 # Sort the DataFrame by the index (Bank)
 pivot_data.sort_index(inplace=True ,ascending=False)
+
+df_latest_change = previous_rates[(previous_rates.ProductType.isin(['Standard'])) & (previous_rates.Institution.isin(['Kiwibank','SBS Bank','Co-operative Bank','Heartland Bank','TSB Bank']))][['Institution','InterestRateType','LastChangeDate','DaysSinceLastChange']]
+df_latest_change['Institution'] = np.where(df_latest_change['Institution']=='Co-operative Bank', 'Co-op Bank'
+    ,np.where(df_latest_change['Institution']=='Heartland Bank', 'Heartland'
+    ,df_latest_change['Institution']))
+pivot_data_change = df_latest_change.pivot(index='Institution', columns='InterestRateType', values='DaysSinceLastChange')
+
+# Define the new order of the columns
+new_order = ['6 Months', '1 Year', '18 Months', '2 Year', '3 Year', '4 Year', '5 Year', 'Floating']
+
+# Reorder the columns
+pivot_data_change = pivot_data_change.reindex(new_order, axis=1)
+
+# Sort the DataFrame by the index (Bank)
+pivot_data_change.sort_index(inplace=True ,ascending=False)
 
 # Create the figure and the axes
 fig, ax = plt.subplots(figsize=(10,6), dpi=300)
@@ -451,42 +546,66 @@ for i in range(nrows):
             ha = 'left'
             text_label = f'{pivot_data.index[i]}'
             color = normal_color
+            # Add bank name
+            ax.annotate(
+                xy=(positions[j], i + .5),
+                text=text_label,
+                ha=ha,
+                va='center',
+                weight=weight,
+                fontsize=8,
+                color=color
+            )
         else:
             ha = 'center'
-            text_label = f'{pivot_data[column].iloc[i]}'
+            # Add interest rate
+            rate_value = pivot_data[column].iloc[i]
+            days_value = pivot_data_change[column].iloc[i]
             
-            # Check if the current value is the lowest in the column
-            if pivot_data[column].iloc[i] == pivot_data[column].min():
-                color = lowest_color
-                weight = 'bold'
-            else:
-                color = normal_color
-            if np.isnan(pivot_data[column].iloc[i]):
-                color = 'white'    
-        ax.annotate(
-            xy=(positions[j], i + .5),
-            text=text_label,
-            ha=ha,
-            va='center',
-            weight=weight,
-            fontsize=8,
-            color=color  # Use the color
-        )
+            if not np.isnan(rate_value):
+                # Interest rate display
+                if rate_value == pivot_data[column].min():
+                    color = lowest_color
+                    weight = 'bold'
+                else:
+                    color = normal_color
+                    weight = 'normal'
+                
+                ax.annotate(
+                    xy=(positions[j], i + .6),  # Slightly higher position
+                    text=f'{rate_value}',
+                    ha=ha,
+                    va='center',
+                    weight=weight,
+                    fontsize=8,
+                    color=color
+                )
+                
+                # Days since last change display
+                ax.annotate(
+                    xy=(positions[j], i + .3),  # Slightly lower position
+                    text=f'({int(days_value)})',
+                    ha=ha,
+                    va='center',
+                    weight='normal',
+                    fontsize=7,
+                    color='gray'
+                )
 
 # Add column names
 for index, c in enumerate(columns):
-        if index == 0:
-            ha = 'left'
-        else:
-            ha = 'center'
-        ax.annotate(
-            xy=(positions[index], nrows + .25),
-            text=columns[index],
-            ha=ha,
-            va='bottom',
-            weight='bold',
-            fontsize=7
-        )
+    if index == 0:
+        ha = 'left'
+    else:
+        ha = 'center'
+    ax.annotate(
+        xy=(positions[index], nrows + .25),
+        text=columns[index],
+        ha=ha,
+        va='bottom',
+        weight='bold',
+        fontsize=7
+    )
 
 # Add dividing lines
 ax.plot([ax.get_xlim()[0], ax.get_xlim()[1]], [nrows, nrows], lw=1.5, color='black', marker='', zorder=4)
@@ -506,23 +625,12 @@ plt.savefig(
 
 
 
-
-from datetime import date
-#from datetime import timedelta
-#today = date.today() - timedelta(days = 1)
-today = date.today() 
-today = today.strftime("%d/%m/%Y")
-
 df_latest = df_all[(df_all.ProductType.isin(['LVR < 80%'])) & (df_all.LatestDateFlag == 'Yes') & (df_all.Institution.isin(['Kiwibank','SBS Bank','Co-operative Bank','Heartland Bank','TSB Bank']))][['Institution','InterestRateType','InterestRate','date','ProductType']]
 df_latest['Institution'] = np.where(df_latest['Institution']=='Co-operative Bank', 'Co-op Bank'
     ,np.where(df_latest['Institution']=='Heartland Bank', 'Heartland'
     ,df_latest['Institution']))
 pivot_data = df_latest.pivot(index='Institution', columns='InterestRateType', values='InterestRate')
-#pivot_data['Floating'] = pivot_data['Floating'].apply(lambda x: float("{:.2f}".format(x)))
 
-
-# Add a new row to the DataFrame
-#pivot_data.loc['ASB'] = np.nan
 
 # Define the new order of the columns
 new_order = ['6 Months', '1 Year', '18 Months', '2 Year', '3 Year', '4 Year', '5 Year', 'Floating']
@@ -532,6 +640,21 @@ pivot_data = pivot_data.reindex(new_order, axis=1)
 
 # Sort the DataFrame by the index (Bank)
 pivot_data.sort_index(inplace=True ,ascending=False)
+
+df_latest_change = previous_rates[(previous_rates.ProductType.isin(['LVR < 80%'])) & (previous_rates.Institution.isin(['Kiwibank','SBS Bank','Co-operative Bank','Heartland Bank','TSB Bank']))][['Institution','InterestRateType','LastChangeDate','DaysSinceLastChange']]
+df_latest_change['Institution'] = np.where(df_latest_change['Institution']=='Co-operative Bank', 'Co-op Bank'
+    ,np.where(df_latest_change['Institution']=='Heartland Bank', 'Heartland'
+    ,df_latest_change['Institution']))
+pivot_data_change = df_latest_change.pivot(index='Institution', columns='InterestRateType', values='DaysSinceLastChange')
+
+# Define the new order of the columns
+new_order = ['6 Months', '1 Year', '18 Months', '2 Year', '3 Year', '4 Year', '5 Year', 'Floating']
+
+# Reorder the columns
+pivot_data_change = pivot_data_change.reindex(new_order, axis=1)
+
+# Sort the DataFrame by the index (Bank)
+pivot_data_change.sort_index(inplace=True ,ascending=False)
 
 # Create the figure and the axes
 fig, ax = plt.subplots(figsize=(10,6), dpi=300)
@@ -558,42 +681,66 @@ for i in range(nrows):
             ha = 'left'
             text_label = f'{pivot_data.index[i]}'
             color = normal_color
+            # Add bank name
+            ax.annotate(
+                xy=(positions[j], i + .5),
+                text=text_label,
+                ha=ha,
+                va='center',
+                weight=weight,
+                fontsize=8,
+                color=color
+            )
         else:
             ha = 'center'
-            text_label = f'{pivot_data[column].iloc[i]}'
+            # Add interest rate
+            rate_value = pivot_data[column].iloc[i]
+            days_value = pivot_data_change[column].iloc[i]
             
-            # Check if the current value is the lowest in the column
-            if pivot_data[column].iloc[i] == pivot_data[column].min():
-                color = lowest_color
-                weight = 'bold'
-            else:
-                color = normal_color
-            if np.isnan(pivot_data[column].iloc[i]):
-                color = 'white'    
-        ax.annotate(
-            xy=(positions[j], i + .5),
-            text=text_label,
-            ha=ha,
-            va='center',
-            weight=weight,
-            fontsize=8,
-            color=color  # Use the color
-        )
+            if not np.isnan(rate_value):
+                # Interest rate display
+                if rate_value == pivot_data[column].min():
+                    color = lowest_color
+                    weight = 'bold'
+                else:
+                    color = normal_color
+                    weight = 'normal'
+                
+                ax.annotate(
+                    xy=(positions[j], i + .6),  # Slightly higher position
+                    text=f'{rate_value}',
+                    ha=ha,
+                    va='center',
+                    weight=weight,
+                    fontsize=8,
+                    color=color
+                )
+                
+                # Days since last change display
+                ax.annotate(
+                    xy=(positions[j], i + .3),  # Slightly lower position
+                    text=f'({int(days_value)})',
+                    ha=ha,
+                    va='center',
+                    weight='normal',
+                    fontsize=7,
+                    color='gray'
+                )
 
 # Add column names
 for index, c in enumerate(columns):
-        if index == 0:
-            ha = 'left'
-        else:
-            ha = 'center'
-        ax.annotate(
-            xy=(positions[index], nrows + .25),
-            text=columns[index],
-            ha=ha,
-            va='bottom',
-            weight='bold',
-            fontsize=7
-        )
+    if index == 0:
+        ha = 'left'
+    else:
+        ha = 'center'
+    ax.annotate(
+        xy=(positions[index], nrows + .25),
+        text=columns[index],
+        ha=ha,
+        va='bottom',
+        weight='bold',
+        fontsize=7
+    )
 
 # Add dividing lines
 ax.plot([ax.get_xlim()[0], ax.get_xlim()[1]], [nrows, nrows], lw=1.5, color='black', marker='', zorder=4)
@@ -610,6 +757,7 @@ plt.savefig(
     transparent=True,
     bbox_inches='tight'
 )
+
 
 
 
